@@ -25,6 +25,7 @@ bool GgufLoader::open(const std::string& path, Mode mode) {
         LV_LOG_ERROR("gguf: loader already holds a file");
         return false;
     }
+    route_ggml_log();
     struct gguf_init_params p {};
     p.no_alloc = mode != Mode::Host;
     p.ctx      = mode == Mode::Meta ? nullptr : &ctx_;

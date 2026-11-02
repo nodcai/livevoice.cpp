@@ -39,6 +39,7 @@ ggml_backend_t init_named(const std::string& want) {
 }
 
 void init() {
+    route_ggml_log();
     ggml_backend_load_all();
 
     if (const char* env = std::getenv("LIVEVOICE_BACKEND")) {

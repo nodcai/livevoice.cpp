@@ -66,6 +66,8 @@ void ggml_log_forward(ggml_log_level glvl, const char* text, void*) {
 
 }  // namespace
 
+void route_ggml_log() { ggml_log_set(ggml_log_forward, nullptr); }
+
 void log(lv_log_level lvl, const char* fmt, ...) {
     // One complete line per call, newline included, so a host callback can
     // write the text straight out.
@@ -92,13 +94,16 @@ void lv_set_log_callback(lv_log_cb cb, void* user) {
         s.user = user;
     }
     // Outside the lock: ggml may log from inside ggml_log_set.
-    ggml_log_set(lv::ggml_log_forward, nullptr);
+    lv::route_ggml_log();
 }
 
 void lv_set_log_level(lv_log_level level) {
-    auto& s = lv::state();
-    std::lock_guard<std::mutex> lk(s.mu);
-    s.min_lvl = level;
+    {
+        auto& s = lv::state();
+        std::lock_guard<std::mutex> lk(s.mu);
+        s.min_lvl = level;
+    }
+    lv::route_ggml_log();
 }
 
 const char* lv_version(void) { return "livevoice 0.1.0"; }

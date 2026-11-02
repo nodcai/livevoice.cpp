@@ -5,7 +5,8 @@
 //
 // load() puts the tensor data in a buffer of the active backend (device
 // memory on a GPU); load_host() keeps it in host memory, for files that are
-// only read once and copied elsewhere (voice prompts).
+// only read once and copied elsewhere (voice prompts); load_meta() reads the
+// metadata alone.
 
 #include "ggml-backend.h"
 #include "ggml.h"
@@ -27,6 +28,7 @@ public:
 
     bool load(const std::string& path);
     bool load_host(const std::string& path);
+    bool load_meta(const std::string& path);
 
     struct ggml_tensor* tensor(const std::string& name) const;
     bool                has(const std::string& name) const { return tensor(name) != nullptr; }
@@ -48,7 +50,8 @@ public:
     std::vector<std::string> get_str_array(const std::string& key) const;
 
 private:
-    bool open(const std::string& path, bool host);
+    enum class Mode { Backend, Host, Meta };
+    bool open(const std::string& path, Mode mode);
 
     struct gguf_context*  gguf_        = nullptr;
     struct ggml_context*  ctx_         = nullptr;

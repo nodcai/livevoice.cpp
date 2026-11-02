@@ -16,22 +16,24 @@ GgufLoader::~GgufLoader() {
     if (ctx_)         ggml_free(ctx_);
 }
 
-bool GgufLoader::load(const std::string& path)      { return open(path, false); }
-bool GgufLoader::load_host(const std::string& path) { return open(path, true); }
+bool GgufLoader::load(const std::string& path)      { return open(path, Mode::Backend); }
+bool GgufLoader::load_host(const std::string& path) { return open(path, Mode::Host); }
+bool GgufLoader::load_meta(const std::string& path) { return open(path, Mode::Meta); }
 
-bool GgufLoader::open(const std::string& path, bool host) {
+bool GgufLoader::open(const std::string& path, Mode mode) {
     if (gguf_) {
         LV_LOG_ERROR("gguf: loader already holds a file");
         return false;
     }
     struct gguf_init_params p {};
-    p.no_alloc = !host;
-    p.ctx      = &ctx_;
+    p.no_alloc = mode != Mode::Host;
+    p.ctx      = mode == Mode::Meta ? nullptr : &ctx_;
     gguf_ = gguf_init_from_file(path.c_str(), p);
     if (!gguf_) {
         LV_LOG_ERROR("gguf: cannot read %s", path.c_str());
         return false;
     }
+    if (mode == Mode::Meta) return true;
     const int64_t n = gguf_get_n_tensors(gguf_);
     names_.reserve(static_cast<size_t>(n));
     for (int64_t i = 0; i < n; ++i) {
@@ -41,7 +43,7 @@ bool GgufLoader::open(const std::string& path, bool host) {
             by_name_.emplace(name, t);
         }
     }
-    if (host || n == 0) return true;
+    if (mode == Mode::Host || n == 0) return true;
 
     // Stream the tensor bytes from the file into one backend buffer.
     buf_ = ggml_backend_alloc_ctx_tensors(ctx_, backend());

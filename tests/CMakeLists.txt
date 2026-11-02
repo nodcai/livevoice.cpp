@@ -14,3 +14,4 @@ function(lv_add_test name)
 endfunction()
 
 lv_add_test(test_smoke)
+lv_add_test(test_tokenizer)

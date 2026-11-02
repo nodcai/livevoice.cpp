@@ -33,6 +33,7 @@ set(LIVEVOICE_SOURCES
     src/common.cpp
     src/backend.cpp
     src/gguf_loader.cpp
+    src/tokenizer.cpp
 )
 
 if(LIVEVOICE_SHARED)

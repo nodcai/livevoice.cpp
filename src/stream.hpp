@@ -42,6 +42,7 @@ public:
     void end();
     // Stops as soon as possible; no further audio is delivered.
     void abort();
+    bool ended() const;
     bool done() const;
     // The generation result (an lv_status), valid once done().
     int  result() const;

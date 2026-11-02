@@ -87,6 +87,60 @@ typedef struct {
 
 LV_API void lv_params_init(lv_params* p);
 
+/* ---------- models and voices ----------
+   A model is one gguf with the weights, the tokenizer and, optionally, the
+   DFN3 post-filter. A voice is a gguf with a pre-computed voice prompt. The
+   model must outlive its voices and streams. */
+typedef struct lv_model  lv_model;
+typedef struct lv_voice  lv_voice;
+typedef struct lv_stream lv_stream;
+
+LV_API lv_model*   lv_model_load(const char* path);   /* NULL on failure */
+LV_API void        lv_model_free(lv_model* model);
+LV_API int         lv_model_has_postfilter(const lv_model* model);
+/* Rate of the audio delivered with these parameters (NULL: the defaults):
+   48000 with the post-filter, else 24000. */
+LV_API int         lv_sample_rate(const lv_model* model, const lv_params* p);
+/* The ggml backend in use, e.g. "MTL0", "CUDA0", "CPU". */
+LV_API const char* lv_backend_name(void);
+
+LV_API lv_voice*   lv_voice_load(const lv_model* model, const char* path);   /* NULL on failure */
+LV_API void        lv_voice_free(lv_voice* voice);
+
+/* ---------- synthesis ----------
+   Audio is mono float in [-1, 1] at lv_sample_rate(). `pcm` is valid only
+   for the call. Return non-zero to stop. Generation is serialised across
+   the process: concurrent calls and streams wait for each other. */
+typedef int (*lv_audio_cb)(const float* pcm, int n_samples, void* user);
+
+/* The whole text at once, delivered in chunks as it is generated. Returns
+   LV_OK (also when the callback stopped it) or an lv_status error. */
+LV_API int lv_synthesize(const lv_model* model, const lv_voice* voice, const char* text,
+                         const lv_params* p, lv_audio_cb on_audio, void* user);
+/* Same, written to a 16-bit WAV. */
+LV_API int lv_synthesize_wav(const lv_model* model, const lv_voice* voice, const char* text,
+                             const lv_params* p, const char* wav_path);
+
+/* ---------- streaming ----------
+   Push text while it is being written (by an LLM, say) and receive audio
+   from a worker thread as it is generated. The result is sample for sample
+   what lv_synthesize gives for the complete text. */
+LV_API lv_stream* lv_stream_begin(const lv_model* model, const lv_voice* voice, const lv_params* p,
+                                  lv_audio_cb on_audio, void* user);   /* NULL on failure */
+/* Appends UTF-8 text without blocking. LV_ERR_INVALID_ARG after end(). */
+LV_API int  lv_stream_push(lv_stream* s, const char* utf8);
+/* No more text; the worker finishes what it has. Does not block. */
+LV_API void lv_stream_end(lv_stream* s);
+/* Stops as soon as possible; no further audio is delivered. */
+LV_API void lv_stream_abort(lv_stream* s);
+/* Non-zero once all audio was delivered (or the stream was stopped). */
+LV_API int  lv_stream_done(const lv_stream* s);
+/* LV_OK or an lv_status error, once done. */
+LV_API int  lv_stream_result(const lv_stream* s);
+LV_API int  lv_stream_sample_rate(const lv_stream* s);
+/* Ends the stream if needed, waits for the worker and frees it. */
+LV_API void lv_stream_free(lv_stream* s);
+
 #ifdef __cplusplus
 }
 #endif

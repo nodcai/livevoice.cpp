@@ -50,6 +50,11 @@ void Stream::abort() {
     cv_.notify_all();
 }
 
+bool Stream::ended() const {
+    std::lock_guard<std::mutex> lk(mu_);
+    return ended_;
+}
+
 bool Stream::done() const {
     std::lock_guard<std::mutex> lk(mu_);
     return done_;

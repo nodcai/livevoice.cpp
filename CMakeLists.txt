@@ -45,6 +45,7 @@ set(LIVEVOICE_SOURCES
     src/model.cpp
     src/frame_graph.cpp
     src/generate.cpp
+    src/stream.cpp
 )
 
 if(LIVEVOICE_SHARED)

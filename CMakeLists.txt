@@ -37,6 +37,7 @@ set(LIVEVOICE_SOURCES
     src/qwen2.cpp
     src/diffusion.cpp
     src/acoustic_decoder.cpp
+    src/wav.cpp
 )
 
 if(LIVEVOICE_SHARED)

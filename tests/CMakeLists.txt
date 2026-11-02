@@ -15,3 +15,4 @@ endfunction()
 
 lv_add_test(test_smoke)
 lv_add_test(test_tokenizer)
+lv_add_test(test_qwen2)

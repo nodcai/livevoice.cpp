@@ -6,7 +6,8 @@
 // The first call picks one backend for the process lifetime:
 //   1. LIVEVOICE_BACKEND (case-insensitive: metal, cuda, vulkan, cpu, ...)
 //      when a matching device is registered,
-//   2. otherwise the best available device, GPU before CPU.
+//   2. otherwise the best available device, GPU before CPU,
+// and the CPU when the chosen GPU lacks kernels the model needs.
 //
 // Graph intermediates come from one shared allocator, so graphs must not be
 // computed from two threads at once; generation holds compute_mutex().

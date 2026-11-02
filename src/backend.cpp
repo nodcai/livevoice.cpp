@@ -38,6 +38,50 @@ ggml_backend_t init_named(const std::string& want) {
     return nullptr;
 }
 
+// Whether `b` runs the op kinds the model is built from. A GPU can be present
+// and still lack kernels for them: the paravirtual Metal device of macOS VMs
+// has no simdgroup reductions, so ggml-metal rejects RMS_NORM and MUL_MAT and
+// a graph would abort at compute time.
+bool runs_model_ops(ggml_backend_t b) {
+    struct ggml_init_params ip {};
+    ip.mem_size = ggml_tensor_overhead() * 64;
+    ip.no_alloc = true;
+    ggml_context* g = ggml_init(ip);
+    ggml_tensor* w16 = ggml_new_tensor_2d(g, GGML_TYPE_F16, 128, 64);
+    ggml_tensor* wq  = ggml_new_tensor_2d(g, GGML_TYPE_Q8_0, 128, 64);
+    ggml_tensor* x   = ggml_new_tensor_2d(g, GGML_TYPE_F32, 128, 4);
+    ggml_tensor* y   = ggml_new_tensor_2d(g, GGML_TYPE_F32, 64, 4);
+    ggml_tensor* x3  = ggml_new_tensor_3d(g, GGML_TYPE_F32, 64, 2, 4);
+    ggml_tensor* pos = ggml_new_tensor_1d(g, GGML_TYPE_I32, 4);
+    ggml_tensor* kv  = ggml_new_tensor_2d(g, GGML_TYPE_F16, 64, 4);
+    const ggml_tensor* ops[] = {
+        ggml_mul_mat(g, w16, x),
+        ggml_mul_mat(g, wq, x),
+        ggml_rms_norm(g, x, 1e-6f),
+        ggml_mul(g, x, x),
+        ggml_add(g, x, x),
+        ggml_scale(g, x, 0.5f),
+        ggml_silu(g, x),
+        ggml_gelu(g, x),
+        ggml_swiglu_split(g, y, y),
+        ggml_soft_max_ext(g, y, nullptr, 0.125f, 0.0f),
+        ggml_rope_ext(g, ggml_reshape_4d(g, x3, 64, 2, 4, 1), pos, nullptr, 64, GGML_ROPE_TYPE_NEOX, 0,
+                      1e6f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f),
+        ggml_cpy(g, y, kv),
+        ggml_concat(g, x, x, 1),
+        ggml_cont(g, ggml_transpose(g, x)),
+    };
+    bool ok = true;
+    for (const ggml_tensor* op : ops) {
+        if (!ggml_backend_supports_op(b, op)) {
+            LV_LOG_WARN("backend: %s cannot run %s", ggml_backend_name(b), ggml_op_desc(op));
+            ok = false;
+        }
+    }
+    ggml_free(g);
+    return ok;
+}
+
 void init() {
     route_ggml_log();
     ggml_backend_load_all();
@@ -47,6 +91,11 @@ void init() {
         if (!g_backend) LV_LOG_WARN("backend: LIVEVOICE_BACKEND=%s has no matching device, using the default", env);
     }
     if (!g_backend) g_backend = ggml_backend_init_best();
+    if (g_backend && !ggml_backend_is_cpu(g_backend) && !runs_model_ops(g_backend)) {
+        LV_LOG_WARN("backend: %s lacks kernels this model needs, using the CPU", ggml_backend_name(g_backend));
+        ggml_backend_free(g_backend);
+        g_backend = nullptr;
+    }
     if (!g_backend) g_backend = ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_CPU, nullptr);
     if (!g_backend) {
         LV_LOG_ERROR("backend: no ggml backend could be initialised");

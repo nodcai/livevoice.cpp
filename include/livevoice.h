@@ -49,6 +49,44 @@ LV_API void        lv_set_log_callback(lv_log_cb cb, void* user);
 LV_API void        lv_set_log_level(lv_log_level level);
 LV_API const char* lv_version(void);
 
+/* ---------- synthesis parameters ----------
+   Always start from lv_params_init(); fields may be appended in later
+   versions. */
+typedef struct {
+    int      n_steps;              /* DPM-Solver++ steps per speech frame. 5 */
+    float    cfg_scale;            /* classifier-free guidance; <= 1 turns it off. 1.5 */
+    uint32_t seed;                 /* 0 = random */
+    int      max_frames;           /* speech frames (7.5 per second) before stopping. 1500 */
+    int      max_text_tokens;      /* text capacity of a stream's caches. 1024 */
+
+    /* Chunking: the first chunk is small for a low time to first audio,
+       later chunks grow by half up to max_chunk_frames, so each one plays
+       for longer than the next takes to make. */
+    int      first_chunk_frames;   /* 3 (about 400 ms of audio) */
+    int      max_chunk_frames;     /* 32 */
+    int      lead_chunk_frames;    /* hold chunks at this size until one carried speech. 0 = off */
+    int      flush_on_silence;     /* emit pending frames once the latents go silent. 1 */
+
+    /* The negative (guidance) condition drifts as speech frames accumulate,
+       audible as the voice losing energy over a long reply; blending the
+       voice prompt's state back in by this much holds it steady. 0.2 */
+    float    neg_anchor;
+
+    int      postfilter;           /* DFN3 post-filter when the model has it (output 48 kHz). 1 */
+    int      trim_lead;            /* drop the lead-in silence before the first sound. 1 */
+
+    /* Text encoding for rare-word pronunciation (see AGENTS.md):
+       refuse BPE merges into token ids >= merge_cap (0 = off). 80000 */
+    int      merge_cap;
+    /* encode a text-initial word as it would split mid-sentence. 1 */
+    int      canonical_first_word;
+    /* merge cap for the last word of the text (0 = off); the model rushes the
+       final word and garbles a rare single-token one. 20000 */
+    int      last_word_merge_cap;
+} lv_params;
+
+LV_API void lv_params_init(lv_params* p);
+
 #ifdef __cplusplus
 }
 #endif

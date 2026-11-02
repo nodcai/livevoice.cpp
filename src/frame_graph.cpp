@@ -61,8 +61,9 @@ bool run_frame(const Model& model, const DpmSchedule& sched, ResidentKV& kv_pos,
     struct ggml_context* g = ggml_init(ipg);
 
     // 1. Diffusion: the latent for this frame.
+    // Outputs are marked on the computed tensor itself, never on a view of
+    // it: the allocator only protects the flagged tensor's own memory.
     struct ggml_tensor* lat = dpm_sample(g, z0, cond, tsin, in.cfg_scale, sched, model.head, model.head_cfg);
-    lat = ggml_reshape_1d(g, lat, latent);
     ggml_set_output(lat);
 
     // 2. Acoustic connector + speech type embedding: the next TTS-LM input.

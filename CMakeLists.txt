@@ -37,6 +37,10 @@ set(LIVEVOICE_SOURCES
     src/qwen2.cpp
     src/diffusion.cpp
     src/acoustic_decoder.cpp
+    src/dfn_fft.cpp
+    src/dfn_fast.cpp
+    src/dfn.cpp
+    src/resample2x.cpp
     src/wav.cpp
 )
 

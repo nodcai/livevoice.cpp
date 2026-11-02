@@ -118,7 +118,7 @@ bool backend_supports_flash_attn() {
         ggml_tensor* op   = ggml_flash_attn_ext(ctx, q, k, v, mask, 0.125f, 0.0f, 0.0f);
         supported = op && ggml_backend_supports_op(b, op);
         ggml_free(ctx);
-        LV_LOG_INFO("backend: flash attention %s on %s", supported ? "on" : "unavailable", g_name.c_str());
+        LV_LOG_INFO("backend: flash attention %s (%s)", supported ? "on" : "unavailable", g_name.c_str());
     });
     return supported;
 }

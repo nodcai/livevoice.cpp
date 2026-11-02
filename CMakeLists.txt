@@ -31,6 +31,8 @@ endif()
 # ---------- liblivevoice ----------
 set(LIVEVOICE_SOURCES
     src/common.cpp
+    src/backend.cpp
+    src/gguf_loader.cpp
 )
 
 if(LIVEVOICE_SHARED)

@@ -1,5 +1,6 @@
 #include "model.hpp"
 
+#include "backend.hpp"
 #include "common.hpp"
 
 #include <cstdio>
@@ -15,6 +16,9 @@ constexpr const char* kVariant = "realtime-0.5b";
 }  // namespace
 
 bool Model::load(const std::string& path) {
+    // Uploads and the decoder's re-layout touch the backend; keep them out
+    // of a generation running on another thread.
+    std::lock_guard<std::mutex> lock(compute_mutex());
     if (!loader.load(path)) return false;
     auto& m = loader;
     m.promote_small_f16_to_f32();

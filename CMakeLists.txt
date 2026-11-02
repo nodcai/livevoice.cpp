@@ -43,6 +43,7 @@ set(LIVEVOICE_SOURCES
     src/resample2x.cpp
     src/wav.cpp
     src/model.cpp
+    src/frame_graph.cpp
 )
 
 if(LIVEVOICE_SHARED)

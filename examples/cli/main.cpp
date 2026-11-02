@@ -18,6 +18,13 @@
 #include <thread>
 #include <vector>
 
+#if defined(_WIN32)
+#include <io.h>
+#define read _read
+#else
+#include <unistd.h>
+#endif
+
 namespace {
 
 void usage(const char* argv0) {
@@ -150,9 +157,11 @@ int main(int argc, char** argv) {
                 pos = ws;
             }
         } else {
+            // read(), not fread(): hand over whatever arrived, without
+            // waiting for a full buffer.
             char buf[256];
-            size_t n;
-            while ((n = std::fread(buf, 1, sizeof(buf) - 1, stdin)) > 0) {
+            long n;
+            while ((n = read(0, buf, sizeof(buf) - 1)) > 0) {
                 buf[n] = '\0';
                 lv_stream_push(s, buf);
             }

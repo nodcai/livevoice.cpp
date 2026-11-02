@@ -36,6 +36,7 @@ set(LIVEVOICE_SOURCES
     src/tokenizer.cpp
     src/qwen2.cpp
     src/diffusion.cpp
+    src/acoustic_decoder.cpp
 )
 
 if(LIVEVOICE_SHARED)

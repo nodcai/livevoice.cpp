@@ -79,6 +79,42 @@ Pro (Metal, 5 steps, CFG 1.5) q4_k runs at 8.0x real time, attn-q8 at 7.9x,
 q8_0 gate / up at 6.3x. With the tokenizer rules below, attn-q8 hits 82.0 %
 of the rare-word slots.
 
+### The compact recipe
+
+`livevoice-quantize --recipe compact` builds a 577 MB file that is closer to
+the q8_0 model than attn-q8 is, by spending the bytes where they matter. Fed
+the same text and speech latents, the TTS-LM's output drifts from the q8_0
+model's by:
+
+| change, everything else q8_0 | drift | size of that part |
+|---|---:|---:|
+| token embedding q4_0 | 0.7 % | 77 MB, from 145 |
+| attention q4_0 | 10.3 % | 25 MB, from 47 |
+| gate / up q4_0 | 10.4 % | 118 MB, from 222 |
+| gate / up iq4_nl | 8.7 % | 118 MB |
+| ffn_down q4_k | 7.8 % | 59 MB, from 111 |
+
+So compact, against attn-q8:
+
+- keeps only the 82,028 embedding rows the tokenizer can produce under its
+  merge cap of 80000 (of 151,936), at q4_0: 41 MB instead of 145. The
+  pruning alone changes no sample; such a file limits `merge_cap` to 80000
+- stores gate / up as iq4_nl: less drift than q4_0 at the same size
+- stores the decoder's upsampling kernels at q8_0 instead of F16 (0.4 %
+  waveform difference), which the decoder then multiplies with directly
+- takes the decoder FFN from q6_k to q5_k (3.5 % waveform difference from
+  the q8_0 decoder, against 1.9 %)
+
+| | attn-q8 | compact |
+|---|---:|---:|
+| file | 757 MB | 577 MB |
+| TTS-LM drift from q8_0 | 13.0 % | 11.7 % |
+| peak memory, M4 Max | 1.50 GB | 0.92 GB |
+| time to 10.4 s of audio, M4 Max | 0.93 s | 0.94 s |
+
+The diffusion head stays at q8_0: it is the most sensitive part of the
+model, and at q5_0 its latents move by 10 % on identical inputs.
+
 ## C API
 
 ```c
@@ -215,7 +251,7 @@ python scripts/convert_model.py --src models/VibeVoice-Realtime-0.5B \
 ```
 
 This reproduces the published attn-q8 file tensor for tensor. The other
-recipes are `mixed`, `q4_k` and `q8_0`; per-family flags override them, and
+recipes are `compact`, `mixed`, `q4_k` and `q8_0`; per-family flags override them, and
 `livevoice-quantize --inspect <gguf>` prints what a file contains. Voices:
 
 ```bash

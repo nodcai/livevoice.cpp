@@ -98,7 +98,11 @@ Keys are `vibevoice.*` (hyperparameters; `vibevoice.variant` must be
 | `model.speech_{scaling,bias}_factor` | `speech.{scaling,bias}` |
 
 The decoder reads its geometry (stages, channels, strides, depths) from the
-tensors. A voice gguf has `voice.{lm,tts_lm,neg_tts_lm}.{k,v}.<i>` as
+tensors. An `at.dec.up_<s>.weight` is either the kernel `[K, C_out, C_in]`
+or, when quantized, the matrix the decoder multiplies with,
+`[C_in, K*C_out]`. A pruned embedding has `lm.tok_embd.weight` with fewer
+rows, their token ids in `lm.tok_embd.ids`, and the merge cap it was pruned
+for in `vibevoice.embed_merge_cap`. A voice gguf has `voice.{lm,tts_lm,neg_tts_lm}.{k,v}.<i>` as
 `[head_dim, n_kv, seq]` and `voice.*.last_hidden` as `[hidden, seq]`.
 
 ## Gotchas
@@ -167,6 +171,8 @@ These bit before.
     (4864) takes one; everything else falls back to `--fallback-type`.
     Q4_0 LM weights cost ~6 points of rare-word pronunciation, Q8_0 is as
     good as F16. Sign off a quantization recipe on rare words, not on WER.
+    `iq4_nl` is the one sub-q5 type besides q4_0 that fits 896-wide rows,
+    and it drifts less than q4_0 at the same size.
 
 11. **Free models before the backend at exit.** ggml-metal asserts if a
     buffer is still resident when its device goes away. The backend frees
@@ -177,12 +183,36 @@ These bit before.
     intermediates come from one allocator. Model loading takes the same
     lock, since it uploads to the backend.
 
+13. **Where precision matters, measured.** Feed every variant the same text
+    and the same latents and compare the TTS-LM output with the q8_0
+    model's: the embedding at q4_0 drifts it 0.7 %, attention or gate/up at
+    q4_0 about 10 % each, ffn_down at q4_k 7.8 %; family drifts add in
+    quadrature (attn-q8 13.0 %, mixed 7.8 %, q4_k 16.7 %, compact 11.7 %).
+    The diffusion head is the sensitive one: q5_0 moves its latents 10 % on
+    identical inputs, so it stays q8_0. A rare-word ASR bench near its
+    ceiling cannot tell these apart; drift can.
+
+14. **A pruned embedding fixes the merge cap.** `--embed-cap 80000` keeps
+    the ids below the cap, the specials, and the spaceless twins the
+    first-word rule swaps in (2,006 of them are above the cap). Output is
+    bit-identical to the full table at that cap; `encode_options` clamps a
+    higher or disabled `merge_cap`, and `Model::embed` fails loudly on an
+    id without a row. A new tokenizer rule that can produce other ids must
+    extend `reachable_ids` in the quantizer.
+
+15. **The decoder's last FFN matrices decide its speed.** Stages 4-6 are a
+    few hundred kB but run at up to the full sample rate. On Metal they
+    take 2.5 ms per frame at q4_0, 2.8 at iq4_nl, 3.1 at F16 and 3.65 at
+    q8_0, with no audible or measurable difference, so recipes give them
+    q4_0 through the fallback type. (The published q8_0 and mixed files
+    have them at q8_0.)
+
 ## Releasing models
 
 1. `scripts/convert_model.py --tokenizer ... --dfn ...` from the upstream
    safetensors.
-2. `livevoice-quantize --recipe attn-q8` (and `mixed`, `q4_k`, `q8_0`);
-   check the per-family table, `--inspect` shows it again later.
+2. `livevoice-quantize --recipe compact` (and `attn-q8`, `mixed`, `q4_k`,
+   `q8_0`); check the per-family table, `--inspect` shows it again later.
 3. Listen, and run the model tests against the result.
 4. Upload to `nodcai/livevoice-0.5b-gguf` with the voices under `voices/`.
 

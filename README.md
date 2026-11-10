@@ -18,7 +18,7 @@ git clone --recursive https://github.com/nodcai/livevoice.cpp && cd livevoice.cp
 cmake -B build && cmake --build build -j
 hf download nodcai/livevoice-0.5b-gguf --local-dir models
 
-./build/bin/livevoice-cli --model models/livevoice-0.5b-ATTN_Q8.gguf \
+./build/bin/livevoice-cli --model models/livevoice-0.5b-COMPACT.gguf \
     --voice models/voices/en-Clarissa_female.gguf \
     --text "Hello! This is a streaming voice." --out hello.wav
 ```
@@ -42,14 +42,15 @@ model writes.
 ## Models
 
 [`nodcai/livevoice-0.5b-gguf`](https://huggingface.co/nodcai/livevoice-0.5b-gguf)
-has four quantizations of the same model, each with the tokenizer and the
+has five quantizations of the same model, each with the tokenizer and the
 post-filter inside, and two voices:
 
 | file | size | contents |
 |---|---:|---|
-| `livevoice-0.5b-ATTN_Q8.gguf` | 757 MB | q8_0 attention, token embedding and diffusion head; q4_0 gate / up; q4_k ffn_down; q6_k decoder FFN. **Recommended**: q4_k speed with the best rare-word pronunciation |
+| `livevoice-0.5b-COMPACT.gguf` | 577 MB | q8_0 attention and diffusion head; iq4_nl gate / up; q4_k ffn_down; pruned q4_0 embedding; q5_k decoder FFN; q8_0 decoder convs. **Recommended**: smallest, 0.9 GB of memory, same speed and pronunciation as attn-q8 |
+| `livevoice-0.5b-ATTN_Q8.gguf` | 757 MB | q8_0 attention, token embedding and diffusion head; q4_0 gate / up; q4_k ffn_down; q6_k decoder FFN. The previous default |
 | `livevoice-0.5b-MIXED.gguf` | 862 MB | attn-q8 with q8_0 gate / up; no measurable gain, slower on phones |
-| `livevoice-0.5b-Q4_K.gguf` | 667 MB | q4_0 attention, gate / up and embedding, q4_k ffn_down; smallest, worse on rare words |
+| `livevoice-0.5b-Q4_K.gguf` | 667 MB | q4_0 attention, gate / up and embedding, q4_k ffn_down; worse on rare words |
 | `livevoice-0.5b-Q8_0.gguf` | 1.1 GB | q8_0 throughout (F16 embedding) |
 | `voices/en-Clarissa_female.gguf`, `voices/en-Clarion_male.gguf` | ~7 MB | voice prompts |
 
@@ -102,15 +103,21 @@ So compact, against attn-q8:
 - stores gate / up as iq4_nl: less drift than q4_0 at the same size
 - stores the decoder's upsampling kernels at q8_0 instead of F16 (0.4 %
   waveform difference), which the decoder then multiplies with directly
-- takes the decoder FFN from q6_k to q5_k (3.5 % waveform difference from
+- takes the decoder FFN from q6_k to q5_k (3.4 % waveform difference from
   the q8_0 decoder, against 1.9 %)
 
 | | attn-q8 | compact |
 |---|---:|---:|
 | file | 757 MB | 577 MB |
 | TTS-LM drift from q8_0 | 13.0 % | 11.7 % |
+| rare words transcribed correctly (990 slots) | 94.7 % | 94.6 % |
+| final word of a sentence correct (400 endings) | 96.2 % | 96.5 % |
 | peak memory, M4 Max | 1.50 GB | 0.92 GB |
 | time to 10.4 s of audio, M4 Max | 0.93 s | 0.94 s |
+
+Per sentence the two differ in both directions; the one clear case is a
+final "cryptocurrency", which compact turns into "cryptocurrencies" in 12 of
+30 runs against 1 of 30. Speed on phone GPUs has not been measured.
 
 The diffusion head stays at q8_0: it is the most sensitive part of the
 model, and at q5_0 its latents move by 10 % on identical inputs.
@@ -125,7 +132,7 @@ int play(const float* pcm, int n, void* user) {
     return 0;                                   /* non-zero stops generation */
 }
 
-lv_model* model = lv_model_load("livevoice-0.5b-ATTN_Q8.gguf");
+lv_model* model = lv_model_load("livevoice-0.5b-COMPACT.gguf");
 lv_voice* voice = lv_voice_load(model, "en-Clarissa_female.gguf");
 lv_params p;
 lv_params_init(&p);
@@ -247,11 +254,12 @@ python scripts/convert_model.py --src models/VibeVoice-Realtime-0.5B \
     --tokenizer models/tokenizer.gguf --dfn models/deepfilternet3.gguf \
     --out models/livevoice-0.5b-F16.gguf
 ./build/bin/livevoice-quantize --src models/livevoice-0.5b-F16.gguf \
-    --out models/livevoice-0.5b-ATTN_Q8.gguf --recipe attn-q8
+    --out models/livevoice-0.5b-COMPACT.gguf --recipe compact
 ```
 
-This reproduces the published attn-q8 file tensor for tensor. The other
-recipes are `compact`, `mixed`, `q4_k` and `q8_0`; per-family flags override them, and
+`--recipe attn-q8` reproduces the published attn-q8 weights tensor for
+tensor. The other recipes are `mixed`, `q4_k` and `q8_0`; per-family flags
+override them, and
 `livevoice-quantize --inspect <gguf>` prints what a file contains. Voices:
 
 ```bash

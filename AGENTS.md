@@ -51,7 +51,7 @@ tests/                       one ctest per test_*.cpp; 77 = skipped
 
 ```bash
 cmake -B build -DLIVEVOICE_BUILD_TESTS=ON && cmake --build build -j
-LIVEVOICE_MODEL=$PWD/models/livevoice-0.5b-ATTN_Q8.gguf \
+LIVEVOICE_MODEL=$PWD/models/livevoice-0.5b-COMPACT.gguf \
 LIVEVOICE_VOICE=$PWD/models/voices/en-Clarissa_female.gguf \
   ctest --test-dir build --output-on-failure
 ```

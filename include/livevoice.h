@@ -76,7 +76,8 @@ typedef struct {
     int      trim_lead;            /* drop the lead-in silence before the first sound. 1 */
 
     /* Text encoding for rare-word pronunciation (see AGENTS.md):
-       refuse BPE merges into token ids >= merge_cap (0 = off). 80000 */
+       refuse BPE merges into token ids >= merge_cap (0 = off). 80000. A model
+       with a pruned embedding table limits this to the cap it was built for. */
     int      merge_cap;
     /* encode a text-initial word as it would split mid-sentence. 1 */
     int      canonical_first_word;

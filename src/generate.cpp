@@ -142,9 +142,15 @@ void upload(ResidentKV& dst, const Voice::Stack& src) {
 
 }  // namespace
 
-Tokenizer::EncodeOptions encode_options(const lv_params& p) {
+Tokenizer::EncodeOptions encode_options(const Model& model, const lv_params& p) {
     Tokenizer::EncodeOptions o;
     o.max_merge_token_id           = std::max(0, p.merge_cap);
+    // A pruned embedding only has the rows reachable under its own cap, so
+    // "off" or a higher cap would produce ids it cannot look up.
+    if (const int cap = model.embed_merge_cap; cap > 0 && (o.max_merge_token_id == 0 || o.max_merge_token_id > cap)) {
+        LV_LOG_WARN("generate: merge_cap %d is beyond this model's embedding, using %d", p.merge_cap, cap);
+        o.max_merge_token_id = cap;
+    }
     o.canonical_first_word         = p.canonical_first_word != 0;
     o.last_word_max_merge_token_id = std::max(0, p.last_word_merge_cap);
     return o;
@@ -456,7 +462,7 @@ int generate(const Model& model, const Voice& voice, const lv_params& p, const G
 
 int synthesize(const Model& model, const Voice& voice, const std::string& text, const lv_params& p,
                const std::function<bool(const float* pcm, int n)>& on_audio) {
-    const std::vector<int32_t> ids = model.tokenizer.encode(terminate_text(text), encode_options(p));
+    const std::vector<int32_t> ids = model.tokenizer.encode(terminate_text(text), encode_options(model, p));
     if (ids.size() <= 1) return LV_ERR_INVALID_ARG;   // nothing but the terminator
     lv_params pp = p;
     pp.max_text_tokens = std::max(pp.max_text_tokens, static_cast<int>(ids.size()) + 8);

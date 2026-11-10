@@ -71,7 +71,7 @@ void Stream::join() {
 }
 
 void Stream::worker() {
-    const Tokenizer::EncodeOptions enc = encode_options(params_);
+    const Tokenizer::EncodeOptions enc = encode_options(*model_, params_);
     Tokenizer::EncodeOptions enc_prefix = enc;   // a prefix has no last word yet
     enc_prefix.last_word_max_merge_token_id = 0;
 

@@ -67,6 +67,18 @@ bool Model::load(const std::string& path) {
     }
     if (!load_qwen2_stack(m, "lm.", cfg.n_layers_lm, &lm) || !load_qwen2_stack(m, "tlm.", cfg.n_layers_tlm, &tlm))
         return false;
+    if (const struct ggml_tensor* ids = m.tensor("lm.tok_embd.ids")) {
+        embed_merge_cap = m.get_i32("vibevoice.embed_merge_cap");
+        std::vector<int32_t> kept(static_cast<size_t>(ggml_nelements(ids)));
+        if (ids->type != GGML_TYPE_I32 || embed_merge_cap <= 0 || static_cast<int64_t>(kept.size()) != tok_embd->ne[1]) {
+            LV_LOG_ERROR("model: pruned embedding without a matching id list or merge cap");
+            return false;
+        }
+        ggml_backend_tensor_get(ids, kept.data(), 0, kept.size() * sizeof(int32_t));
+        embed_row.assign(cfg.vocab_size, -1);
+        for (size_t r = 0; r < kept.size(); ++r)
+            if (kept[r] >= 0 && kept[r] < cfg.vocab_size) embed_row[kept[r]] = static_cast<int32_t>(r);
+    }
     {
         const std::vector<float> t = tensor_to_f32(types);
         if (t.size() != static_cast<size_t>(2) * cfg.hidden) {
@@ -131,11 +143,16 @@ bool Model::embed(const int32_t* ids, int n, std::vector<float>* out) const {
             LV_LOG_ERROR("model: token id %d out of range", ids[t]);
             return false;
         }
+        const int32_t r = embed_row.empty() ? ids[t] : embed_row[ids[t]];
+        if (r < 0) {
+            LV_LOG_ERROR("model: token id %d is not in this file's pruned embedding (merge cap %d)", ids[t], embed_merge_cap);
+            return false;
+        }
         float* dst = out->data() + static_cast<size_t>(hidden) * t;
         if (tok_embd->type == GGML_TYPE_F32) {
-            ggml_backend_tensor_get(tok_embd, dst, row * static_cast<size_t>(ids[t]), row);
+            ggml_backend_tensor_get(tok_embd, dst, row * static_cast<size_t>(r), row);
         } else {
-            ggml_backend_tensor_get(tok_embd, raw.data(), row * static_cast<size_t>(ids[t]), row);
+            ggml_backend_tensor_get(tok_embd, raw.data(), row * static_cast<size_t>(r), row);
             tt->to_float(raw.data(), dst, hidden);
         }
     }

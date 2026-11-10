@@ -49,6 +49,11 @@ struct Model {
     Tokenizer   tokenizer;
 
     struct ggml_tensor*            tok_embd = nullptr;
+    // A pruned embedding table holds only the rows the tokenizer can produce
+    // under embed_merge_cap: embed_row maps a token id to its row (-1 = not
+    // stored). Empty and 0 for a full table.
+    std::vector<int32_t>           embed_row;
+    int                            embed_merge_cap = 0;
     std::vector<Qwen2LayerWeights> lm, tlm;
     struct ggml_tensor*            tlm_norm = nullptr;
     // tts_input_types rows (0 = speech, 1 = text), host copies.
@@ -66,7 +71,8 @@ struct Model {
 
     bool load(const std::string& path);
     Qwen2Hparams hparams() const;
-    // Embedding rows for `ids` ([hidden * n]); the table may be quantized.
+    // Embedding rows for `ids` ([hidden * n]); the table may be quantized
+    // and pruned.
     bool embed(const int32_t* ids, int n, std::vector<float>* out) const;
 };
 

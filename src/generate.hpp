@@ -29,8 +29,9 @@ struct GenerateIO {
     std::function<bool()> should_abort;
 };
 
-// The tokenizer options the parameters ask for.
-Tokenizer::EncodeOptions encode_options(const lv_params& p);
+// The tokenizer options the parameters ask for, within what the model's
+// embedding table can serve.
+Tokenizer::EncodeOptions encode_options(const Model& model, const lv_params& p);
 
 // A complete text as the model wants it: trailing whitespace replaced by
 // the "\n" that ends the user turn.

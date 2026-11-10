@@ -6,6 +6,8 @@
 //      implementation of the decoder
 //   2. decoding in pieces (5 + 4 frames, 3-frame graphs) == one call
 //   3. a reset state reproduces the first output
+//   4. the upsampling kernels stored re-laid as [C_in, K*C_out] matrices
+//      (how a file carries them quantized) decode to the same signal
 #include "acoustic_decoder.hpp"
 #include "gguf_loader.hpp"
 
@@ -168,13 +170,13 @@ int main() {
 
     // ---- write and load as a model file would be ----
     const std::string path = "test_decoder.gguf";
-    {
+    auto write = [&](std::map<std::string, Tensor>& tensors) {
         gguf_context* gg = gguf_init_empty();
         struct ggml_init_params ip {};
-        ip.mem_size = ggml_tensor_overhead() * (g_w.size() + 1);
+        ip.mem_size = ggml_tensor_overhead() * (tensors.size() + 1);
         ip.no_alloc = true;
         ggml_context* ctx = ggml_init(ip);
-        for (auto& [name, t] : g_w) {
+        for (auto& [name, t] : tensors) {
             ggml_tensor* gt = ggml_new_tensor(ctx, GGML_TYPE_F32, static_cast<int>(t.ne.size()), t.ne.data());
             ggml_set_name(gt, name.c_str());
             gt->data = t.data.data();
@@ -183,8 +185,9 @@ int main() {
         const bool ok = gguf_write_to_file(gg, path.c_str(), false);
         gguf_free(gg);
         ggml_free(ctx);
-        if (!ok) { std::fprintf(stderr, "FAIL: write %s\n", path.c_str()); return 1; }
-    }
+        return ok;
+    };
+    if (!write(g_w)) { std::fprintf(stderr, "FAIL: write %s\n", path.c_str()); return 1; }
     lv::GgufLoader m;
     lv::AcousticDecoder dec;
     if (!m.load(path) || !dec.load(m, "at.dec", kEps)) { std::fprintf(stderr, "FAIL: load\n"); return 2; }
@@ -204,12 +207,38 @@ int main() {
     dec.reset_state(st);
     if (!dec.decode(st, lat.data(), kFrames, &again)) return 7;
 
+    // ---- the same decoder with re-laid upsampling kernels ----
+    std::map<std::string, Tensor> relaid = g_w;
+    for (size_t s = 1; s < kC.size(); ++s) {
+        Tensor& t = relaid["at.dec.up_" + std::to_string(s) + ".weight"];
+        const int64_t K = t.ne[0], Co = t.ne[1], Ci = t.ne[2];
+        Vec mat(t.data.size());
+        for (int64_t ci = 0; ci < Ci; ++ci)
+            for (int64_t co = 0; co < Co; ++co)
+                for (int64_t k = 0; k < K; ++k) mat[(k * Co + co) * Ci + ci] = t.data[(ci * Co + co) * K + k];
+        t = {{Ci, K * Co}, mat};
+    }
+    Vec from_relaid;
+    {
+        if (!write(relaid)) return 9;
+        lv::GgufLoader m2;
+        lv::AcousticDecoder dec2;
+        lv::AcousticDecoder::State st2;
+        if (!m2.load(path) || !dec2.load(m2, "at.dec", kEps) || dec2.hop() != 6 || !dec2.init_state(&st2) ||
+            !dec2.decode(st2, lat.data(), kFrames, &from_relaid)) {
+            std::fprintf(stderr, "FAIL: re-laid kernels\n");
+            return 10;
+        }
+        std::remove(path.c_str());
+    }
+
     const double e_ref = rel_err(whole, want), e_chunk = rel_err(pieces, whole), e_reset = rel_err(again, whole);
-    std::printf("vs reference %.2e, chunked vs whole %.2e, reset %.2e (%zu samples)\n", e_ref, e_chunk, e_reset,
-                whole.size());
+    const double e_relaid = rel_err(from_relaid, whole);
+    std::printf("vs reference %.2e, chunked vs whole %.2e, reset %.2e, re-laid kernels %.2e (%zu samples)\n", e_ref,
+                e_chunk, e_reset, e_relaid, whole.size());
     // F16 kernels: the CPU rounds the activations to F16 for those matmuls,
     // and GPUs pick other matmul kernels for other chunk widths.
-    const bool ok = e_ref < 5e-3 && e_chunk < 1e-3 && e_reset == 0.0;
+    const bool ok = e_ref < 5e-3 && e_chunk < 1e-3 && e_reset == 0.0 && e_relaid < 1e-3;
     std::printf("%s\n", ok ? "OK" : "FAIL");
     return ok ? 0 : 8;
 }

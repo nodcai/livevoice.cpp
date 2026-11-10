@@ -103,14 +103,22 @@ bool AcousticDecoder::load(const GgufLoader& m, const std::string& prefix, float
     for (int s = 1;; ++s) {
         struct ggml_tensor* k = get("up_" + std::to_string(s) + ".weight");
         if (!k) break;
-        if (k->ne[0] % 2 != 0 || k->ne[2] != C_.back()) {
+        struct ggml_tensor* bias = get("up_" + std::to_string(s) + ".bias");
+        // Either the kernel [K, C_out, C_in], or the matrix it is re-laid to,
+        // [C_in, K*C_out]: the only layout a quantized kernel can be stored
+        // in. That one is multiplied with as it is; C_out comes from the bias.
+        const bool    relaid = ggml_n_dims(k) == 2;
+        const int64_t c_out  = relaid ? (bias ? ggml_nelements(bias) : 0) : k->ne[1];
+        const int64_t taps   = relaid ? (c_out > 0 ? k->ne[1] / c_out : 0) : k->ne[0];
+        const int64_t c_from = relaid ? k->ne[0] : k->ne[2];
+        if (taps <= 0 || taps % 2 != 0 || c_from != C_.back() || (relaid && taps * c_out != k->ne[1])) {
             LV_LOG_ERROR("decoder: up_%d is not a K = 2*stride transposed conv from %d channels", s, C_.back());
             return false;
         }
         up_k.push_back(k);
-        tr_b_.push_back(get("up_" + std::to_string(s) + ".bias"));
-        stride_.push_back(static_cast<int>(k->ne[0] / 2));
-        C_.push_back(static_cast<int>(k->ne[1]));
+        tr_b_.push_back(bias);
+        stride_.push_back(static_cast<int>(taps / 2));
+        C_.push_back(static_cast<int>(c_out));
     }
     const int n_stages = static_cast<int>(C_.size());
     if (head_k->ne[1] != C_.back()) {
@@ -158,7 +166,9 @@ bool AcousticDecoder::load(const GgufLoader& m, const std::string& prefix, float
     head_w_ = ggml_new_tensor_3d(ctx_, GGML_TYPE_F16, C_.back(), 1, kTaps);
     tr_w_.assign(n_stages, nullptr);
     for (int s = 1; s < n_stages; ++s)
-        tr_w_[s] = ggml_new_tensor_2d(ctx_, GGML_TYPE_F16, C_[s - 1], static_cast<int64_t>(2) * stride_[s] * C_[s]);
+        tr_w_[s] = ggml_n_dims(up_k[s]) == 2
+            ? up_k[s]
+            : ggml_new_tensor_2d(ctx_, GGML_TYPE_F16, C_[s - 1], static_cast<int64_t>(2) * stride_[s] * C_[s]);
     for (size_t i = 0, s = 0, b = 0; i < blocks_.size(); ++i, ++b) {
         while (static_cast<int>(b) >= depth_[s]) { ++s; b = 0; }
         blocks_[i].dw = ggml_new_tensor_2d(ctx_, GGML_TYPE_F32, C_[s], kTaps);
@@ -172,7 +182,8 @@ bool AcousticDecoder::load(const GgufLoader& m, const std::string& prefix, float
     BenchClock clk;
     relay_dense(stem_k, stem_w_);
     relay_dense(head_k, head_w_);
-    for (int s = 1; s < n_stages; ++s) relay_transposed(up_k[s], tr_w_[s]);
+    for (int s = 1; s < n_stages; ++s)
+        if (tr_w_[s] != up_k[s]) relay_transposed(up_k[s], tr_w_[s]);
     for (size_t i = 0; i < blocks_.size(); ++i) relay_depthwise(mixer_k[i], blocks_[i].dw);
     ready_ = true;
     LV_LOG_INFO("decoder: %d stages, %zu blocks, hop %d (%.1f MB re-laid in %.0f ms)", n_stages, blocks_.size(),

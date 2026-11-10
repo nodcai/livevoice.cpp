@@ -50,7 +50,9 @@ public:
 
     // Reads `<prefix>.stem`, `.up_<s>` (s = 1..), `.stage_<s>_block_<b>`,
     // `.final_norm` (optional) and `.head`. The geometry (stages, channels,
-    // strides, depths) comes from the tensors themselves.
+    // strides, depths) comes from the tensors themselves. An `.up_<s>` kernel
+    // may already be the re-laid matrix [C_in, K*C_out], in any type mul_mat
+    // takes; that is how a file stores it quantized.
     bool load(const GgufLoader& m, const std::string& prefix, float eps);
     void free();
 
@@ -97,7 +99,7 @@ private:
 
     struct ggml_tensor* stem_w_ = nullptr, *stem_b_ = nullptr;   // [C_in, C_0, 7] F16
     struct ggml_tensor* head_w_ = nullptr, *head_b_ = nullptr;   // [C_last, 1, 7] F16
-    std::vector<struct ggml_tensor*> tr_w_, tr_b_;               // per stage: [C_{s-1}, 2*stride*C_s] F16
+    std::vector<struct ggml_tensor*> tr_w_, tr_b_;               // per stage: [C_{s-1}, 2*stride*C_s]
     std::vector<Block>  blocks_;                                 // stage-major
     struct ggml_tensor* final_norm_ = nullptr;
 };

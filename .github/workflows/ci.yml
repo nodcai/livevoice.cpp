@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     env:
-      LIVEVOICE_MODEL: ${{ github.workspace }}/models/livevoice-0.5b-ATTN_Q8.gguf
+      LIVEVOICE_MODEL: ${{ github.workspace }}/models/livevoice-0.5b-COMPACT.gguf
       LIVEVOICE_VOICE: ${{ github.workspace }}/models/voices/en-Clarissa_female.gguf
       LIVEVOICE_BACKEND: cpu
     steps:
@@ -41,13 +41,13 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: models
-          key: models-livevoice-0.5b-ATTN_Q8-en-Clarissa_female
+          key: models-livevoice-0.5b-COMPACT-en-Clarissa_female
       - name: Download model and voice
         run: |
           set -e
           base=https://huggingface.co/nodcai/livevoice-0.5b-gguf/resolve/main
           mkdir -p models/voices
-          [ -f "$LIVEVOICE_MODEL" ] || curl -fsSL -o "$LIVEVOICE_MODEL" $base/livevoice-0.5b-ATTN_Q8.gguf
+          [ -f "$LIVEVOICE_MODEL" ] || curl -fsSL -o "$LIVEVOICE_MODEL" $base/livevoice-0.5b-COMPACT.gguf
           [ -f "$LIVEVOICE_VOICE" ] || curl -fsSL -o "$LIVEVOICE_VOICE" $base/voices/en-Clarissa_female.gguf
       - name: Build
         run: |

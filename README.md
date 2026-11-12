@@ -200,7 +200,8 @@ and it runs on Metal, where `conv_transpose_1d` at this 3200x upsample does
 not. The first chunk is 3 frames; later ones grow by half so each plays
 longer than the next takes to make, and pending frames are flushed when the
 latents go silent, because the model sometimes pads half a second before
-its EOS.
+its EOS. With the lead-in trimmed, the schedule starts at the first sound:
+the first audio a host gets is at least 3 frames of it.
 
 The realtime model now and then puts a short musical artefact in front of
 replies that open with "Welcome!" or "Hello there". A **DeepFilterNet3

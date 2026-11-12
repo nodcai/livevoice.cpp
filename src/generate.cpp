@@ -14,6 +14,11 @@
 //     lead-relative threshold then classes everything as silent
 //   * optional lead hold: keep chunks small until one has carried speech, for
 //     hosts that cut the lead-in themselves at chunk boundaries
+//   * with the lead-in trimmed, the schedule starts at the first sound: the
+//     first audio delivered is at least a first chunk long, and only then do
+//     chunks grow. A sound starting near the end of a chunk otherwise left a
+//     sliver (down to 60 ms) to start playback with, followed at once by a
+//     grown chunk that took longer to make than the sliver played: a stall
 // The decoder is stateful, so each emit decodes only the new frames.
 
 #include "generate.hpp"
@@ -236,9 +241,23 @@ int generate(const Model& model, const Voice& voice, const lv_params& p, const G
     bool lead_done    = !p.trim_lead;
     int  fade_left    = 0;
     std::vector<float> lead_keep, trim_buf;
+    // After the trim, the first audio is held until it is a first chunk long
+    // (7.5 frames per second), so that playback starts with enough to cover
+    // the next chunk.
+    const int start_frames = std::min(std::max(1, p.max_chunk_frames), std::max(1, p.first_chunk_frames));
+    const int start_min    = static_cast<int>(static_cast<int64_t>(start_frames) * out_rate * 2 / 15);
+    bool started = lead_done;   // the host has had audio
+    std::vector<float> start_buf;
+    auto to_host = [&](const float* pcm, int n) -> bool {
+        if (started) return io.emit_audio(pcm, n);
+        start_buf.insert(start_buf.end(), pcm, pcm + n);
+        if (static_cast<int>(start_buf.size()) < start_min) return true;
+        started = true;
+        return io.emit_audio(start_buf.data(), static_cast<int>(start_buf.size()));
+    };
     auto ship = [&](const float* pcm, int n) -> bool {
         if (n <= 0) return true;
-        if (lead_done && fade_left <= 0) return io.emit_audio(pcm, n);
+        if (lead_done && fade_left <= 0) return to_host(pcm, n);
         trim_buf.clear();
         if (!lead_done) {
             int first = 0;
@@ -267,7 +286,7 @@ int generate(const Model& model, const Voice& voice, const lv_params& p, const G
             const float t = static_cast<float>(done + i) / kFadeIn;
             trim_buf[i] *= t * t;
         }
-        return io.emit_audio(trim_buf.data(), static_cast<int>(trim_buf.size()));
+        return to_host(trim_buf.data(), static_cast<int>(trim_buf.size()));
     };
     auto deliver = [&](const float* pcm24, int n, bool final_chunk) -> bool {
         if (!use_pf) return n > 0 ? ship(pcm24, n) : true;
@@ -304,6 +323,7 @@ int generate(const Model& model, const Voice& voice, const lv_params& p, const G
             emit_chunk = first_chunk;
             return;
         }
+        if (!started) return;   // the lead-in, trimmed: the schedule starts with the first audio
         emit_chunk = std::min(max_chunk, std::max(emit_chunk + 1, emit_chunk * 3 / 2));
     };
     // Decodes and delivers every frame not emitted yet.
@@ -442,6 +462,7 @@ int generate(const Model& model, const Voice& voice, const lv_params& p, const G
         bool ok = emit_pending();
         if (ok && use_pf) ok = deliver(nullptr, 0, true);   // lookahead and overlap-add tail
         if (ok && !lead_done && !lead_keep.empty()) ok = io.emit_audio(lead_keep.data(), static_cast<int>(lead_keep.size()));
+        if (ok && !started && !start_buf.empty()) ok = io.emit_audio(start_buf.data(), static_cast<int>(start_buf.size()));
         stopped = !ok;
     }
     if (bench_enabled()) {

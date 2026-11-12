@@ -61,7 +61,9 @@ typedef struct {
 
     /* Chunking: the first chunk is small for a low time to first audio,
        later chunks grow by half up to max_chunk_frames, so each one plays
-       for longer than the next takes to make. */
+       for longer than the next takes to make. With trim_lead, the first
+       audio delivered is at least first_chunk_frames long, counted from
+       the first sound. */
     int      first_chunk_frames;   /* 3 (about 400 ms of audio) */
     int      max_chunk_frames;     /* 32 */
     int      lead_chunk_frames;    /* hold chunks at this size until one carried speech. 0 = off */

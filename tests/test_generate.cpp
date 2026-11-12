@@ -2,12 +2,14 @@
 // LIVEVOICE_VOICE; skips otherwise.
 //
 // Checks that a sentence comes out as plausible speech (length, level, no
-// clipping), in several chunks, at the advertised rate, and that the same
-// seed gives the same samples.
+// clipping), in several chunks, at the advertised rate, that the same seed
+// gives the same samples, and that the first chunk, after the lead-in trim,
+// is a first chunk long (a sliver there stalls playback).
 #include "generate.hpp"
 #include "model.hpp"
 
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
@@ -27,9 +29,11 @@ int main() {
     lv_params_init(&p);
     p.seed = 1234;
     const std::string text = "The quick brown fox jumps over the lazy dog.";
+    int first = 0;
     auto run = [&](std::vector<float>* pcm, int* chunks) {
         *chunks = 0;
         return lv::synthesize(model, voice, text, p, [&](const float* s, int n) {
+            if (*chunks == 0) first = n;
             pcm->insert(pcm->end(), s, s + n);
             ++*chunks;
             return true;
@@ -49,6 +53,18 @@ int main() {
     if (ca < 2) { std::fprintf(stderr, "FAIL: expected several chunks\n"); return 5; }
     if (rate != (model.dfn.ready ? 48000 : 24000)) { std::fprintf(stderr, "FAIL: rate\n"); return 6; }
     if (a != b) { std::fprintf(stderr, "FAIL: same seed, different audio\n"); return 7; }
+
+    // Where the sound starts in a chunk varies with the seed; before the
+    // first audio was held, most seeds started with less than a first chunk.
+    const int first_min = p.first_chunk_frames * rate * 2 / 15;   // 7.5 frames per second
+    for (uint32_t seed = 1; seed <= 6; ++seed) {
+        p.seed = seed;
+        std::vector<float> c;
+        int cc = 0;
+        if (run(&c, &cc) != LV_OK) { std::fprintf(stderr, "FAIL: synthesize\n"); return 2; }
+        std::printf("seed %u: first chunk %.3f s\n", seed, static_cast<double>(first) / rate);
+        if (first < first_min && cc > 1) { std::fprintf(stderr, "FAIL: first chunk shorter than first_chunk_frames\n"); return 8; }
+    }
     std::printf("OK\n");
     return 0;
 }

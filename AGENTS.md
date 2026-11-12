@@ -66,7 +66,7 @@ LIVEVOICE_VOICE=$PWD/models/voices/en-Clarissa_female.gguf \
 | `test_dfn` | FFT, upsampler; with `LIVEVOICE_DFN_*`, the filter against a reference output | |
 | `test_model` | geometry of a real model and voice | yes |
 | `test_frame` | the frame graph's latent = the sampler's alone | yes |
-| `test_generate` | plausible speech, several chunks, same seed = same samples | yes |
+| `test_generate` | plausible speech, several chunks, same seed = same samples, a full first chunk | yes |
 | `test_stream` | streamed pieces = one-shot synthesis; abort is prompt | yes |
 | `test_capi` | the C API, callback stop, WAV output, both sample rates | yes |
 
